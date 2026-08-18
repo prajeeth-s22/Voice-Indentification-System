@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voice Language Identification System</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
+<header class="header">
+  <div class="header-title">🎙️ Voice Language Identification System</div>
+  <div class="header-subtitle">Speech &amp; Language Processing Mini Project</div>
+  <span class="header-badge">MFCC · Random Forest · 4 Languages</span>
+</header>
+
+<!-- ═══════════════════════════ MAIN ═════════════════════════════ -->
+<main class="container">
+
+  <!-- ── Tab bar ───────────────────────────────────────────────── -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('identify', this)">🎯 Identify Language</button>
+    <button class="tab-btn"        onclick="showTab('train',    this)">⚙️ Train Model</button>
+    <button class="tab-btn"        onclick="showTab('evaluate', this)">📊 Evaluation</button>
+  </div>
+
+  <!-- ══════════════════ TAB 1 — IDENTIFY ══════════════════════ -->
+  <div id="tab-identify" class="tab-content active">
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📁</span> Upload Audio</div>
+
+      <!-- Upload zone -->
+      <div class="upload-zone" id="uploadZone"
+           ondragover="onDrag(event)" ondragleave="offDrag(event)" ondrop="onDrop(event)">
+        <input type="file" id="audioFile" accept=".wav" onchange="onFileSelect(this)" />
+        <div class="upload-icon">🎵</div>
+        <div class="upload-text">Upload or Drop Voice Recording</div>
+        <div class="upload-hint">Supported format: WAV · Max size 50 MB</div>
+      </div>
+
+      <!-- Selected file info -->
+      <div class="selected-file" id="selectedFile">📎 <span id="fileName"></span></div>
+
+      <!-- Model not trained warning -->
+      {% if not model_trained %}
+      <div class="alert alert-warning" style="display:block; margin-top:1rem;">
+        ⚠️ Model has not been trained yet. Go to the <strong>Train Model</strong> tab first.
+      </div>
+      {% endif %}
+
+      <!-- Action button -->
+      <button class="btn btn-primary" id="identifyBtn"
+              onclick="identifyLanguage()"
+              {% if not model_trained %}disabled{% endif %}>
+        🔍 Identify Language
+      </button>
+
+      <!-- Spinner -->
+      <div class="spinner" id="identifySpinner">
+        <div class="spinner-ring"></div> Analysing audio…
+      </div>
+
+      <!-- Error / info alerts -->
+      <div class="alert alert-error"   id="identifyError"></div>
+      <div class="alert alert-success" id="identifySuccess"></div>
+    </div>
+
+    <!-- Result card (shown after prediction) -->
+    <div class="result-card" id="resultCard">
+      <div class="result-label">Predicted Language</div>
+      <div class="result-language" id="resultLanguage">—</div>
+
+      <div class="result-label">Confidence</div>
+      <div class="result-confidence" id="resultConfidence">—</div>
+
+      <div class="result-meta">
+        <div class="meta-item">
+          <div class="meta-value" id="metaDuration">—</div>
+          <div class="meta-label">Audio Duration</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-value" id="metaSR">—</div>
+          <div class="meta-label">Sampling Rate</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-value" id="metaFile">—</div>
+          <div class="meta-label">Filename</div>
+        </div>
+      </div>
+
+      <!-- Probability bars for all languages -->
+      <div class="prob-bars" id="probBars"></div>
+    </div>
+
+  </div><!-- /tab-identify -->
+
+  <!-- ══════════════════ TAB 2 — TRAIN ═════════════════════════ -->
+  <div id="tab-train" class="tab-content">
+
+    <div class="card">
+      <div class="card-title"><span class="icon">📂</span> Dataset Overview</div>
+
+      <div class="instructions">
+        Place <code>.wav</code> recordings in the corresponding language folders:<br>
+        <code>dataset/english/</code> &nbsp; <code>dataset/hindi/</code> &nbsp;
+        <code>dataset/tamil/</code> &nbsp; <code>dataset/telugu/</code><br>
+        Then click <strong>Train Model</strong> below. Aim for at least
+        <strong>10–20 files per language</strong> for reliable accuracy.
+      </div>
+
+      <!-- Language file counts -->
+      <div class="lang-grid" id="langGrid">
+        {% for lang, cnt in dataset_counts.items() %}
+        <div class="lang-stat" id="stat-{{ lang }}">
+          <div class="lang-stat-name">{{ lang.capitalize() }}</div>
+          <div class="lang-stat-count" id="count-{{ lang }}">{{ cnt }}</div>
+          <div class="lang-stat-label">audio file{{ 's' if cnt != 1 else '' }}</div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <button class="btn btn-primary" id="trainBtn" onclick="startTraining()">
+        ⚙️ Train Model
+      </button>
+
+      <div class="spinner" id="trainSpinner">
+        <div class="spinner-ring"></div> Training in progress… this may take a moment.
+      </div>
+
+      <div class="alert alert-success" id="trainSuccess"></div>
+      <div class="alert alert-error"   id="trainError"></div>
+      <div class="alert alert-warning" id="trainWarning"></div>
+    </div>
+
+  </div><!-- /tab-train -->
+
+  <!-- ══════════════════ TAB 3 — EVALUATE ══════════════════════ -->
+  <div id="tab-evaluate" class="tab-content">
+
+    {% if training_report %}
+    <!-- Accuracy banner -->
+    <div class="accuracy-display">
+      <div>
+        <div class="accuracy-value">{{ training_report.accuracy }}%</div>
+        <div class="accuracy-label">Overall Accuracy</div>
+      </div>
+      <div style="color: var(--text-muted); font-size:0.85rem; max-width:220px; text-align:left;">
+        Trained on <strong>{{ training_report.n_train }}</strong> samples,
+        tested on <strong>{{ training_report.n_test }}</strong> samples.
+      </div>
+    </div>
+
+    <!-- Classification report table -->
+    <div class="card">
+      <div class="card-title"><span class="icon">📋</span> Classification Report</div>
+      <div style="overflow-x:auto;">
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Language</th>
+              <th>Precision</th>
+              <th>Recall</th>
+              <th>F1-Score</th>
+              <th>Support</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for lang in training_report.classes %}
+            {% set r = training_report.report.get(lang, {}) %}
+            <tr>
+              <td>{{ lang.capitalize() }}</td>
+              <td>{{ "%.2f"|format(r.get('precision', 0)) }}</td>
+              <td>{{ "%.2f"|format(r.get('recall', 0)) }}</td>
+              <td>{{ "%.2f"|format(r.get('f1-score', 0)) }}</td>
+              <td>{{ r.get('support', 0)|int }}</td>
+            </tr>
+            {% endfor %}
+            {% set wa = training_report.report.get('weighted avg', {}) %}
+            <tr style="font-weight:700; border-top: 2px solid var(--border);">
+              <td>Weighted Avg</td>
+              <td>{{ "%.2f"|format(wa.get('precision', 0)) }}</td>
+              <td>{{ "%.2f"|format(wa.get('recall', 0)) }}</td>
+              <td>{{ "%.2f"|format(wa.get('f1-score', 0)) }}</td>
+              <td>{{ wa.get('support', 0)|int }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Confusion matrix -->
+    <div class="card">
+      <div class="card-title"><span class="icon">🔲</span> Confusion Matrix</div>
+      <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:1rem;">
+        Rows = Actual language &nbsp;|&nbsp; Columns = Predicted language
+      </p>
+      <div style="overflow-x:auto;">
+        <table class="cm-table">
+          <thead>
+            <tr>
+              <th>Actual ↓ / Pred →</th>
+              {% for lang in training_report.classes %}
+              <th>{{ lang.capitalize() }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for i, row in enumerate(training_report.confusion_matrix) %}
+            <tr>
+              <th>{{ training_report.classes[i].capitalize() }}</th>
+              {% for j, val in enumerate(row) %}
+              <td class="{{ 'cm-diag' if i == j else '' }}">{{ val }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% else %}
+    <div class="card">
+      <div class="card-title"><span class="icon">📊</span> Evaluation</div>
+      <div class="alert alert-info" style="display:block;">
+        ℹ️ No training report found. Please train the model first on the
+        <strong>Train Model</strong> tab.
+      </div>
+    </div>
+    {% endif %}
+
+  </div><!-- /tab-evaluate -->
+
+</main>
+
+<!-- ═══════════════════════════ FOOTER ═══════════════════════════ -->
+<footer class="footer">
+  Voice Language Identification System &mdash; Speech &amp; Language Processing Mini Project
+  &nbsp;|&nbsp; MFCC + Random Forest &nbsp;|&nbsp; English · Hindi · Tamil · Telugu
+</footer>
+
+<!-- ═══════════════════════════ JS ════════════════════════════════ -->
+<script>
+/* ── Tab switching ─────────────────────────────────────────────── */
+function showTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+/* ── File upload helpers ───────────────────────────────────────── */
+function onDrag(e)  { e.preventDefault(); document.getElementById('uploadZone').classList.add('drag-over'); }
+function offDrag(e) { document.getElementById('uploadZone').classList.remove('drag-over'); }
+
+function onDrop(e) {
+  e.preventDefault();
+  offDrag(e);
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    document.getElementById('audioFile').files = e.dataTransfer.files;
+    showSelectedFile(file);
+  }
+}
+
+function onFileSelect(input) {
+  if (input.files.length > 0) showSelectedFile(input.files[0]);
+}
+
+function showSelectedFile(file) {
+  const el = document.getElementById('selectedFile');
+  document.getElementById('fileName').textContent = file.name + '  (' + (file.size / 1024).toFixed(1) + ' KB)';
+  el.style.display = 'block';
+  hideAlert('identifyError');
+  hideAlert('identifySuccess');
+  document.getElementById('resultCard').style.display = 'none';
+}
+
+/* ── Alert helpers ─────────────────────────────────────────────── */
+function showAlert(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function hideAlert(id) {
+  document.getElementById(id).style.display = 'none';
+}
+
+/* ── Identify language ─────────────────────────────────────────── */
+async function identifyLanguage() {
+  const fileInput = document.getElementById('audioFile');
+  if (!fileInput.files.length) {
+    showAlert('identifyError', '⚠️ Please select a WAV audio file first.');
+    return;
+  }
+
+  // Prepare UI
+  hideAlert('identifyError');
+  hideAlert('identifySuccess');
+  document.getElementById('resultCard').style.display = 'none';
+  document.getElementById('identifyBtn').disabled = true;
+  document.getElementById('identifySpinner').style.display = 'flex';
+
+  const formData = new FormData();
+  formData.append('audio', fileInput.files[0]);
+
+  try {
+    const resp = await fetch('/predict', { method: 'POST', body: formData });
+    const data = await resp.json();
+
+    if (!resp.ok || data.error) {
+      showAlert('identifyError', '❌ ' + (data.error || 'Unknown error.'));
+      return;
+    }
+
+    const r = data.result;
+
+    // Populate result card
+    document.getElementById('resultLanguage').textContent   = r.language.toUpperCase();
+    document.getElementById('resultConfidence').textContent = r.confidence + '%';
+    document.getElementById('metaDuration').textContent     = r.duration + ' sec';
+    document.getElementById('metaSR').textContent           = r.sample_rate + ' Hz';
+    document.getElementById('metaFile').textContent         = r.filename;
+
+    // Probability bars
+    const probContainer = document.getElementById('probBars');
+    probContainer.innerHTML = '<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.8rem;">All Language Probabilities</div>';
+
+    const sorted = Object.entries(r.all_probs).sort((a, b) => b[1] - a[1]);
+    sorted.forEach(([lang, pct]) => {
+      probContainer.innerHTML += `
+        <div class="prob-row">
+          <div class="prob-lang">${lang}</div>
+          <div class="prob-bar-wrap">
+            <div class="prob-bar-fill" style="width:${pct}%"></div>
+          </div>
+          <div class="prob-pct">${pct}%</div>
+        </div>`;
+    });
+
+    document.getElementById('resultCard').style.display = 'block';
+
+  } catch (err) {
+    showAlert('identifyError', '❌ Network error: ' + err.message);
+  } finally {
+    document.getElementById('identifyBtn').disabled = false;
+    document.getElementById('identifySpinner').style.display = 'none';
+  }
+}
+
+/* ── Training ──────────────────────────────────────────────────── */
+let _pollTimer = null;
+
+async function startTraining() {
+  hideAlert('trainSuccess');
+  hideAlert('trainError');
+  hideAlert('trainWarning');
+  document.getElementById('trainBtn').disabled = true;
+  document.getElementById('trainSpinner').style.display = 'flex';
+
+  try {
+    const resp = await fetch('/train', { method: 'POST' });
+    const data = await resp.json();
+    if (!resp.ok) {
+      showAlert('trainError', '❌ ' + (data.error || 'Could not start training.'));
+      document.getElementById('trainBtn').disabled = false;
+      document.getElementById('trainSpinner').style.display = 'none';
+      return;
+    }
+    // Start polling
+    _pollTimer = setInterval(pollTrainingStatus, 1500);
+  } catch(err) {
+    showAlert('trainError', '❌ Network error: ' + err.message);
+    document.getElementById('trainBtn').disabled = false;
+    document.getElementById('trainSpinner').style.display = 'none';
+  }
+}
+
+async function pollTrainingStatus() {
+  try {
+    const resp = await fetch('/train_status');
+    const data = await resp.json();
+
+    if (data.status === 'done') {
+      clearInterval(_pollTimer);
+      document.getElementById('trainSpinner').style.display = 'none';
+      document.getElementById('trainBtn').disabled = false;
+
+      const acc = data.result ? data.result.accuracy : '?';
+      showAlert('trainSuccess',
+        `✅ Training completed successfully!  Accuracy: ${acc}%\n` +
+        `   Reload the Evaluation tab to view the full report.`
+      );
+      // Reload page to refresh eval tab
+      setTimeout(() => location.reload(), 2000);
+    } else if (data.status === 'error') {
+      clearInterval(_pollTimer);
+      document.getElementById('trainSpinner').style.display = 'none';
+      document.getElementById('trainBtn').disabled = false;
+      showAlert('trainError', '❌ Training failed: ' + data.message);
+    }
+    // If 'running', keep polling
+  } catch(err) {
+    // network hiccup, keep polling
+  }
+}
+
+/* ── Refresh dataset counts ────────────────────────────────────── */
+async function refreshDatasetCounts() {
+  try {
+    const resp = await fetch('/dataset_counts');
+    const data = await resp.json();
+    for (const [lang, cnt] of Object.entries(data)) {
+      const el = document.getElementById('count-' + lang);
+      if (el) el.textContent = cnt;
+    }
+  } catch(e) {}
+}
+
+// Refresh once on load
+document.addEventListener('DOMContentLoaded', refreshDatasetCounts);
+</script>
+
+</body>
+</html>
