@@ -127,6 +127,7 @@ def mask_key(k: str) -> str:
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.route("/")
+@app.route("/api/index")
 def index():
     active_key = get_gemini_api_key()
     return render_template(
