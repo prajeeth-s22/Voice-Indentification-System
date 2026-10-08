@@ -1,12 +1,10 @@
 """
 audio_processing.py
-Handles audio loading, preprocessing, and validation.
+Handles audio loading, preprocessing, and validation with robust Vercel serverless fallbacks.
 """
 
-import numpy as np
-import librosa
-import soundfile as sf
 import os
+import numpy as np
 
 # Constants
 TARGET_SR = 16000
@@ -16,7 +14,7 @@ MIN_DURATION = 0.5  # seconds
 def load_audio(filepath, target_sr=TARGET_SR):
     """
     Load an audio file and resample to target sample rate.
-    Returns (audio_array, sample_rate) or raises an exception.
+    Uses librosa if available, falling back to scipy.io.wavfile.
     """
     if not os.path.exists(filepath):
         raise FileNotFoundError(f"Audio file not found: {filepath}")
@@ -25,26 +23,62 @@ def load_audio(filepath, target_sr=TARGET_SR):
     if ext not in [".wav", ".WAV"]:
         raise ValueError(f"Unsupported format '{ext}'. Please upload a WAV file.")
 
+    # Try librosa first
     try:
+        import librosa
         audio, sr = librosa.load(filepath, sr=target_sr, mono=True)
-    except Exception as e:
-        raise RuntimeError(f"Failed to load audio: {e}")
+        return audio, sr
+    except Exception:
+        pass
 
-    return audio, sr
+    # Fallback to scipy.io.wavfile (zero C-library dependency)
+    try:
+        from scipy.io import wavfile
+        from scipy import signal
+
+        sr, data = wavfile.read(filepath)
+        if data.ndim > 1:
+            data = np.mean(data, axis=1)
+
+        if data.dtype == np.int16:
+            data = data.astype(np.float32) / 32768.0
+        elif data.dtype == np.int32:
+            data = data.astype(np.float32) / 2147483648.0
+        elif data.dtype == np.uint8:
+            data = (data.astype(np.float32) - 128.0) / 128.0
+        else:
+            data = data.astype(np.float32)
+
+        if sr != target_sr:
+            num_samples = int(len(data) * target_sr / sr)
+            data = signal.resample(data, num_samples)
+            sr = target_sr
+
+        return data.astype(np.float32), sr
+    except Exception as e:
+        raise RuntimeError(f"Failed to load audio file: {e}")
 
 
 def preprocess_audio(audio, sr=TARGET_SR):
     """
     Preprocess audio:
-      1. Ensure mono (already done by librosa.load with mono=True)
-      2. Normalize amplitude to [-1, 1]
-      3. Trim leading/trailing silence
+      1. Normalize amplitude to [-1, 1]
+      2. Trim leading/trailing silence
     Returns processed audio array.
     """
-    # Trim silence
-    audio, _ = librosa.effects.trim(audio, top_db=25)
+    try:
+        import librosa
+        audio, _ = librosa.effects.trim(audio, top_db=25)
+    except Exception:
+        # Simple energy-based silence trimming fallback
+        energy = np.abs(audio)
+        threshold = 0.01 * np.max(energy) if len(energy) > 0 else 0.01
+        mask = energy > threshold
+        if np.any(mask):
+            start = np.argmax(mask)
+            end = len(mask) - np.argmax(mask[::-1])
+            audio = audio[start:end]
 
-    # Normalize
     max_val = np.max(np.abs(audio))
     if max_val > 0:
         audio = audio / max_val
