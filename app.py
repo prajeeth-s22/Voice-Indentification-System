@@ -57,10 +57,13 @@ LANGUAGES   = ["english", "hindi", "tamil", "telugu"]
 
 ALLOWED_EXTENSIONS = {"wav", "mp3", "ogg", "flac", "m4a", "aac", "webm"}
 
-# Create required dirs
-for lang in LANGUAGES:
-    os.makedirs(os.path.join(DATASET_DIR, lang), exist_ok=True)
-os.makedirs(MODELS_DIR, exist_ok=True)
+# Create required dirs safely
+try:
+    for lang in LANGUAGES:
+        os.makedirs(os.path.join(DATASET_DIR, lang), exist_ok=True)
+    os.makedirs(MODELS_DIR, exist_ok=True)
+except Exception:
+    pass
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024   # 50 MB upload limit
