@@ -1,0 +1,10 @@
+.git
+.env
+.env.example
+dataset/
+*.mp4
+*.md
+generate_demo_audio.py
+train_model.py
+__pycache__/
+.venv
