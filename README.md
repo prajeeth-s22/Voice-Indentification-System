@@ -1,218 +1,173 @@
 # Voice Language Identification System
 
-**Speech & Language Processing Mini Project**
+**Speech & Language Processing Project**
 
 ---
 
-## Description
+## Overview
 
-This system identifies the spoken language from a short audio recording using
-**MFCC (Mel-Frequency Cepstral Coefficients)** features and a
-**Random Forest** classifier.
+This system identifies the spoken language from audio recordings using two complementary recognition engines:
 
-Supported Languages: **English · Hindi · Tamil · Telugu**
+1. **🌲 Multi-Model Classical ML Suite (MFCC Features + Model Selection Layer)**
+   - Extracts 80-dimensional MFCC feature vectors (40 means + 40 standard deviations) from audio clips.
+   - Evaluates **6 distinct scikit-learn classifiers** on identical features with a fixed stratified train/test split:
+     1. **Random Forest** (`RandomForestClassifier(n_estimators=100, random_state=42)`)
+     2. **Support Vector Machine (SVM)** (`SVC(kernel="rbf", probability=True, random_state=42)`)
+     3. **K-Nearest Neighbors (KNN)** (`KNeighborsClassifier(n_neighbors=5)`)
+     4. **Logistic Regression** (`LogisticRegression(max_iter=1000, random_state=42)`)
+     5. **Decision Tree** (`DecisionTreeClassifier(random_state=42)`)
+     6. **Gradient Boosting** (`GradientBoostingClassifier(random_state=42)`)
+   - Includes an **Auto – Best Model** option that dynamically uses the classifier with the highest test accuracy.
+   - Provides full **Model Comparison Table** with Accuracy, Precision, Recall, F1-Score, and Confusion Matrix.
+
+2. **✨ Google Gemini Multimodal Audio AI (Cloud Real-World Audio)**
+   - Directly analyzes human speech across English, Hindi, Tamil, Telugu, and dozens of world languages.
+   - Produces native script transcriptions, English translations, and phonetic reasoning.
 
 ---
 
-## Features
+## Pipeline
 
-| Feature | Status |
-|---|---|
-| WAV file upload via web UI | ✅ |
-| Audio preprocessing (mono, 16 kHz, normalize, trim) | ✅ |
-| MFCC feature extraction (40 coefficients → 80-dim vector) | ✅ |
-| Random Forest classification | ✅ |
-| Language prediction with confidence score | ✅ |
-| Per-language probability display | ✅ |
-| Accuracy, Precision, Recall, F1-Score evaluation | ✅ |
-| Confusion matrix | ✅ |
-| Browser-based training trigger | ✅ |
-| Error handling (no model, bad format, short audio) | ✅ |
+```text
+Voice Input (Upload / Microphone Recording)
+                    ↓
+        Audio Preprocessing
+ (Convert to Mono · Resample to 16,000 Hz · Amplitude Normalization · Silence Trimming)
+                    ↓
+       MFCC Feature Extraction
+ (40 MFCCs → 40 Means + 40 Std Deviations = 80-dimensional feature vector)
+                    ↓
+         MODEL SELECTION LAYER
+  [ Random Forest | SVM | KNN | Logistic Regression | Decision Tree | Gradient Boosting | Auto ]
+                    ↓
+      Selected Classification Model
+                    ↓
+            Language Prediction
+                    ↓
+             Confidence Score
+                    ↓
+          Existing Results Dashboard
+```
+
+---
+
+## Supported Models & Baseline Hyperparameters
+
+| Model | Scikit-Learn Class | Key Hyperparameters |
+|---|---|---|
+| **Random Forest** | `RandomForestClassifier` | `n_estimators=100, random_state=42, n_jobs=-1` |
+| **SVM** | `SVC` | `kernel="rbf", probability=True, random_state=42` |
+| **KNN** | `KNeighborsClassifier` | `n_neighbors=5` |
+| **Logistic Regression** | `LogisticRegression` | `max_iter=1000, random_state=42` |
+| **Decision Tree** | `DecisionTreeClassifier` | `random_state=42` |
+| **Gradient Boosting** | `GradientBoostingClassifier` | `random_state=42` |
+| **Auto – Best Model** | Dynamic Dispatch | Automatically selects model with highest test accuracy |
+
+---
+
+## Setup & Installation
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **(Optional) Configure Gemini API Key:**
+   Get a free key from [Google AI Studio](https://aistudio.google.com/app/apikey) and set it in your `.env` file or via the Web UI:
+   ```bash
+   GEMINI_API_KEY="your_api_key_here"
+   ```
+
+---
+
+## Quick Start
+
+### 1. Launch the Web Application
+```bash
+python app.py
+```
+Open **http://127.0.0.1:5000** in your browser.
+
+- Select **🌲 Local ML Classifiers** or **✨ Google Gemini AI**.
+- Choose your preferred model from the **Classification Model** dropdown (or select **Auto – Best Model**).
+- Upload an audio file or click **Record Voice Live**.
+- Click **Identify Language & Classify**.
+- View the predicted language, confidence score, and language probability distribution.
+
+---
+
+### 2. Multi-Model Training Pipeline
+
+To train and evaluate all 6 models on your dataset:
+```bash
+python train_model.py
+```
+
+The script will:
+1. Scan `dataset/english/`, `dataset/hindi/`, `dataset/tamil/`, `dataset/telugu/`.
+2. Extract 80-dim MFCC features.
+3. Train all 6 classifiers on the identical train/test split.
+4. Calculate Accuracy, Precision, Recall, F1-score, and Confusion Matrices.
+5. Identify the best-performing model dynamically.
+6. Save all `.pkl` models and `training_report.json` in `models/`.
+
+---
+
+### 3. Command-Line Predictions
+
+```bash
+# Predict using SVM
+python predict.py "path/to/audio.wav" --model svm
+
+# Predict using Random Forest
+python predict.py "path/to/audio.wav" --model random_forest
+
+# Predict using Auto (dynamically chooses best model)
+python predict.py "path/to/audio.wav" --model auto
+
+# Predict using Google Gemini AI
+python predict.py "path/to/audio.wav" --engine gemini --api-key YOUR_KEY
+```
 
 ---
 
 ## Project Structure
 
-```
+```text
 voice-language-identification/
 │
-├── app.py                  # Flask web application
-├── train_model.py          # Training script
-├── predict.py              # Prediction module (also CLI)
-├── requirements.txt
-├── README.md
-│
-├── dataset/
-│   ├── english/            ← place English WAV files here
-│   ├── hindi/              ← place Hindi   WAV files here
-│   ├── tamil/              ← place Tamil   WAV files here
-│   └── telugu/             ← place Telugu  WAV files here
-│
-├── models/
-│   ├── language_model.pkl  (generated after training)
-│   └── label_encoder.pkl   (generated after training)
+├── app.py                     # Flask web server (Model selector, dual engine & recording)
+├── predict.py                 # Multi-model prediction module (CLI & API)
+├── train_model.py             # Multi-model training and evaluation pipeline
+├── requirements.txt           # Python dependencies
+├── README.md                  # Project documentation
+├── .env.example               # Template for API key configuration
 │
 ├── utils/
-│   ├── audio_processing.py
-│   └── feature_extraction.py
+│   ├── model_registry.py      # Central registry for all 6 classifiers
+│   ├── audio_processing.py    # Audio loading, resampling, and normalization
+│   ├── feature_extraction.py  # MFCC feature extraction (80-dim vector)
+│   └── gemini_service.py      # Google Gemini multimodal audio recognition
 │
-└── static/
-    └── styles.css
+├── dataset/                   # Dataset directory
+│   ├── english/
+│   ├── hindi/
+│   ├── tamil/
+│   └── telugu/
+│
+├── models/                    # Trained model artifacts
+│   ├── random_forest.pkl
+│   ├── svm.pkl
+│   ├── knn.pkl
+│   ├── logistic_regression.pkl
+│   ├── decision_tree.pkl
+│   ├── gradient_boosting.pkl
+│   ├── language_model.pkl     # Legacy Random Forest fallback
+│   ├── label_encoder.pkl      # Sklearn LabelEncoder
+│   └── training_report.json   # Multi-model comparison report
+│
+├── static/
+│   └── styles.css             # UI styling & animations
+└── templates/
+    └── index.html             # Web application frontend with model selector
 ```
-
----
-
-## Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-> Requires Python 3.8+
-
----
-
-## Dataset Setup
-
-1. Collect short WAV recordings (3–10 seconds) for each language.
-2. Place them in the corresponding folder:
-
-```
-dataset/english/  →  en_001.wav, en_002.wav, …
-dataset/hindi/    →  hi_001.wav, hi_002.wav, …
-dataset/tamil/    →  ta_001.wav, ta_002.wav, …
-dataset/telugu/   →  te_001.wav, te_002.wav, …
-```
-
-> **Minimum:** 2 files per language to train.  
-> **Recommended:** 20–50 files per language for good accuracy.
-
-Useful free audio sources:
-- Mozilla Common Voice: https://commonvoice.mozilla.org
-- OpenSLR: https://openslr.org
-
----
-
-## Run Training (Command Line)
-
-```bash
-python train_model.py
-```
-
-Sample output:
-```
-[1/4] Scanning dataset folders …
-  ✔  'english': 15 file(s) found.
-  ✔  'hindi':   12 file(s) found.
-  ✔  'tamil':   14 file(s) found.
-  ✔  'telugu':  13 file(s) found.
-
-[2/4] Training Random Forest classifier …
-      Accuracy on test set: 86.67%
-
-[3/4] Saving model …
-
-[4/4] Evaluation
-Language     Precision   Recall       F1  Support
--------------------------------------------------------
-english           0.89     0.89     0.89        9
-hindi             0.83     0.83     0.83        6
-tamil             0.88     0.88     0.88        8
-telugu            0.86     0.86     0.86        8
-
-✅  Training completed successfully!
-```
-
----
-
-## Run Application
-
-```bash
-python app.py
-```
-
-Then open **http://127.0.0.1:5000** in your browser.
-
-You can also trigger training directly from the **Train Model** tab in the UI.
-
----
-
-## CLI Prediction (Optional)
-
-```bash
-python predict.py path/to/audio.wav
-```
-
-Output:
-```
-File           : sample.wav
-Duration       : 4.8 seconds
-Sampling Rate  : 16000 Hz
-
-Predicted Language : Tamil
-Confidence         : 87.42%
-
-Probabilities per language:
-  Tamil      87.42%  █████████████████
-  English     5.21%  █
-  Hindi       3.98%
-  Telugu      3.39%
-```
-
----
-
-## How It Works
-
-```
-User Audio (WAV)
-       │
-       ▼
-Audio Preprocessing
- • Convert to mono
- • Resample to 16,000 Hz
- • Normalize amplitude
- • Trim silence
-       │
-       ▼
-MFCC Feature Extraction
- • 40 MFCC coefficients
- • Compute mean (40 values)
- • Compute std deviation (40 values)
- • Concatenate → 80-dimensional feature vector
-       │
-       ▼
-Random Forest Classifier
- (100 trees, trained on labelled audio)
-       │
-       ▼
-Language Prediction + Confidence Score
-```
-
-**Why MFCCs?** MFCCs capture the spectral envelope of speech in a compact
-representation that is highly discriminative for language identification.
-Different languages have characteristic phoneme sets and prosodic patterns
-that are reflected in the MFCC distribution.
-
----
-
-## Limitations (Phase 1)
-
-- Accuracy depends heavily on dataset size and quality
-- Background noise can reduce accuracy
-- Very short clips (< 1 second) may be unreliable
-- Only 4 languages supported
-
----
-
-## Future Work (Phase 2)
-
-- CNN / LSTM deep learning models
-- Wav2Vec2 / HuBERT pre-trained embeddings
-- Real-time microphone identification
-- More languages
-- Noise robustness
-- Mobile / cloud deployment
-
----
-
-*Voice Language Identification System — Speech & Language Processing Mini Project*

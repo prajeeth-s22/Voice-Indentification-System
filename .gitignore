@@ -10,5 +10,5 @@ ENV/
 .venv
 *.pkl.bak
 .vscode/
-.idea/
 .DS_Store
+*.mp4

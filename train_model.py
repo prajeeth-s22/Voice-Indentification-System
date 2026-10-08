@@ -1,12 +1,25 @@
 """
 train_model.py
-Training script for the Voice Language Identification System.
+──────────────
+Multi-model training pipeline for the Voice Language Identification System.
 
 Usage:
     python train_model.py
 
-Reads WAV files from dataset/<language>/, extracts MFCC features,
-trains a Random Forest classifier, evaluates it, and saves the model.
+Pipeline:
+1. Reads all WAV files from dataset/<language>/ (English, Hindi, Tamil, Telugu).
+2. Extracts 80-dimensional MFCC feature vectors (40 means + 40 standard deviations).
+3. Uses the EXACT SAME train/test split (random_state=42) across ALL classifiers for fair comparison.
+4. Trains 6 distinct classification models:
+     - Random Forest
+     - Support Vector Machine (SVM)
+     - K-Nearest Neighbors (KNN)
+     - Logistic Regression
+     - Decision Tree
+     - Gradient Boosting
+5. Evaluates accuracy, precision, recall, F1-score, and confusion matrix for each model.
+6. Dynamically identifies the best-performing model.
+7. Saves all models, the label encoder, and a comprehensive comparison report into models/.
 """
 
 import os
@@ -14,7 +27,6 @@ import sys
 import json
 import numpy as np
 import joblib
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import (
@@ -27,25 +39,31 @@ from sklearn.metrics import (
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils.audio_processing import load_audio, preprocess_audio
 from utils.feature_extraction import extract_mfcc_features
+from utils.model_registry import (
+    MODEL_DEFINITIONS,
+    get_model_path,
+    clear_model_cache,
+)
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-DATASET_DIR = os.path.join(BASE_DIR, "dataset")
-MODELS_DIR  = os.path.join(BASE_DIR, "models")
-MODEL_PATH  = os.path.join(MODELS_DIR, "language_model.pkl")
+BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
+DATASET_DIR  = os.path.join(BASE_DIR, "dataset")
+MODELS_DIR   = os.path.join(BASE_DIR, "models")
 ENCODER_PATH = os.path.join(MODELS_DIR, "label_encoder.pkl")
 REPORT_PATH  = os.path.join(MODELS_DIR, "training_report.json")
+LEGACY_MODEL_PATH = os.path.join(MODELS_DIR, "language_model.pkl")
 
 LANGUAGES = ["english", "hindi", "tamil", "telugu"]
-MIN_FILES_PER_CLASS = 2   # warn if fewer than this
+MIN_FILES_PER_CLASS = 2   # Warn if fewer than this
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def collect_dataset():
     """
-    Walk through dataset/<language>/ folders and collect (filepath, label) pairs.
-    Returns X (feature matrix) and y (label array).
+    Walk through dataset/<language>/ folders and extract MFCC features.
+    Returns:
+        X (np.ndarray): (n_samples, 80)
+        y (np.ndarray): (n_samples,) string language labels
+        file_counts (dict): counts per language
     """
     features_list = []
     labels_list   = []
@@ -53,7 +71,7 @@ def collect_dataset():
 
     for lang in LANGUAGES:
         lang_dir = os.path.join(DATASET_DIR, lang)
-        os.makedirs(lang_dir, exist_ok=True)   # create folder if missing
+        os.makedirs(lang_dir, exist_ok=True)
 
         wav_files = [
             f for f in os.listdir(lang_dir)
@@ -82,110 +100,180 @@ def collect_dataset():
     return np.array(features_list), np.array(labels_list), file_counts
 
 
-def train(X, y):
-    """Train a Random Forest and return the model, encoder, and metrics dict."""
+def train_all_models(X, y):
+    """
+    Train and evaluate all 6 classifiers using the SAME train/test split.
+    Returns:
+        trained_models (dict): {model_id: fitted_classifier}
+        le (LabelEncoder): fitted label encoder
+        comparison_results (dict): evaluation metrics and reports for each model
+    """
     le = LabelEncoder()
     y_enc = le.fit_transform(y)
 
-    if len(np.unique(y_enc)) < 2:
+    unique_classes = np.unique(y_enc)
+    if len(unique_classes) < 2:
         raise ValueError("Need samples from at least 2 languages to train.")
 
-    # If very few samples, skip stratified split
+    # Stratified train/test split for fair evaluation
     test_size = 0.2 if len(X) >= 10 else 0.1
     X_train, X_test, y_train, y_test = train_test_split(
         X, y_enc, test_size=test_size, random_state=42, stratify=y_enc
     )
 
-    clf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    clf.fit(X_train, y_train)
+    trained_models = {}
+    models_evaluation = {}
 
-    y_pred = clf.predict(X_test)
-    acc    = accuracy_score(y_test, y_pred)
+    best_model_id = None
+    best_acc = -1.0
+    best_f1 = -1.0
 
-    report = classification_report(
-        y_test, y_pred,
-        target_names=le.classes_,
-        output_dict=True,
-        zero_division=0,
-    )
+    print(f"\n[2/4] Training {len(MODEL_DEFINITIONS)} classification models on identical features...")
+    print(f"      Train samples: {len(X_train)}  |  Test samples: {len(X_test)}\n")
 
-    cm = confusion_matrix(y_test, y_pred).tolist()
+    for m_id, m_def in MODEL_DEFINITIONS.items():
+        name = m_def["name"]
+        print(f"  --> Training {name} ...", end=" ", flush=True)
 
-    metrics = {
-        "accuracy":       round(acc * 100, 2),
-        "report":         report,
-        "confusion_matrix": cm,
-        "classes":        le.classes_.tolist(),
-        "n_train":        len(X_train),
-        "n_test":         len(X_test),
+        clf = m_def["create"]()
+        clf.fit(X_train, y_train)
+
+        y_pred = clf.predict(X_test)
+        acc = round(accuracy_score(y_test, y_pred) * 100, 2)
+
+        report = classification_report(
+            y_test, y_pred,
+            target_names=le.classes_,
+            output_dict=True,
+            zero_division=0,
+        )
+
+        cm = confusion_matrix(y_test, y_pred).tolist()
+
+        weighted = report.get("weighted avg", {})
+        prec = round(weighted.get("precision", 0) * 100, 2)
+        rec  = round(weighted.get("recall", 0) * 100, 2)
+        f1   = round(weighted.get("f1-score", 0) * 100, 2)
+
+        print(f"Done! Test Accuracy: {acc}% | F1: {f1}%")
+
+        trained_models[m_id] = clf
+        models_evaluation[m_id] = {
+            "id": m_id,
+            "name": name,
+            "short_name": m_def.get("short_name", name),
+            "description": m_def.get("description", ""),
+            "filename": m_def["filename"],
+            "accuracy": acc,
+            "precision": prec,
+            "recall": rec,
+            "f1_score": f1,
+            "report": report,
+            "confusion_matrix": cm,
+        }
+
+        # Track best model (accuracy primary, F1 secondary)
+        if (acc > best_acc) or (acc == best_acc and f1 > best_f1):
+            best_acc = acc
+            best_f1 = f1
+            best_model_id = m_id
+
+    # Fallback to random forest if no best found
+    if not best_model_id:
+        best_model_id = "random_forest"
+
+    summary = {
+        "models": models_evaluation,
+        "best_model": best_model_id,
+        "best_model_name": models_evaluation[best_model_id]["name"],
+        "best_accuracy": models_evaluation[best_model_id]["accuracy"],
+        # Top-level backwards compatibility fields for existing UI & routes:
+        "accuracy": models_evaluation[best_model_id]["accuracy"],
+        "report": models_evaluation[best_model_id]["report"],
+        "confusion_matrix": models_evaluation[best_model_id]["confusion_matrix"],
+        "classes": le.classes_.tolist(),
+        "n_train": len(X_train),
+        "n_test": len(X_test),
     }
 
-    return clf, le, metrics
+    return trained_models, le, summary
 
-
-# ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    print("\n" + "=" * 60)
-    print("  Voice Language Identification - Training Script")
-    print("=" * 60)
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
+    print("\n" + "=" * 65)
+    print("  Voice Language Identification - Multi-Model Training Pipeline")
+    print("=" * 65)
 
     # 1. Collect data
     print("\n[1/4] Scanning dataset folders ...")
     X, y, file_counts = collect_dataset()
 
     if len(X) == 0:
-        print("\n[ERROR] No audio files found in the dataset folders.")
+        print("\n[ERROR] No audio files found in dataset/ folders.")
         print("        Place WAV files in dataset/<language>/ and re-run.\n")
         sys.exit(1)
 
     print(f"\n      Total samples collected: {len(X)}")
 
-    # 2. Train
-    print("\n[2/4] Training Random Forest classifier ...")
+    # 2. Train all models
     try:
-        clf, le, metrics = train(X, y)
+        trained_models, le, summary = train_all_models(X, y)
     except ValueError as e:
         print(f"\n[ERROR] Training error: {e}\n")
         sys.exit(1)
 
-    print(f"      Accuracy on test set: {metrics['accuracy']}%")
+    summary["file_counts"] = file_counts
 
-    # 3. Save model artefacts
-    print("\n[3/4] Saving model ...")
+    # 3. Save all models & artifacts
+    print("\n[3/4] Saving models and evaluation reports ...")
     os.makedirs(MODELS_DIR, exist_ok=True)
-    joblib.dump(clf, MODEL_PATH)
-    joblib.dump(le,  ENCODER_PATH)
 
-    # Save report for the web UI to read
-    report_data = {
-        **metrics,
-        "file_counts": file_counts,
-    }
-    with open(REPORT_PATH, "w") as f:
-        json.dump(report_data, f, indent=2)
+    for m_id, clf in trained_models.items():
+        save_path = get_model_path(m_id)
+        joblib.dump(clf, save_path)
+        print(f"      Saved: {MODEL_DEFINITIONS[m_id]['name']:<28} -> models/{os.path.basename(save_path)}")
 
-    print(f"      Model   : {MODEL_PATH}")
-    print(f"      Encoder : {ENCODER_PATH}")
-    print(f"      Report  : {REPORT_PATH}")
+    # Preserve legacy language_model.pkl for Random Forest
+    if "random_forest" in trained_models:
+        joblib.dump(trained_models["random_forest"], LEGACY_MODEL_PATH)
+        print(f"      Saved: {'Legacy Random Forest':<28} -> models/language_model.pkl")
 
-    # 4. Print classification report
-    print("\n[4/4] Evaluation\n")
-    header = f"{'Language':<12} {'Precision':>10} {'Recall':>8} {'F1':>8} {'Support':>9}"
+    joblib.dump(le, ENCODER_PATH)
+    print(f"      Saved: {'Label Encoder':<28} -> models/label_encoder.pkl")
+
+    with open(REPORT_PATH, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+    print(f"      Saved: {'Comprehensive Report':<28} -> models/training_report.json")
+
+    # Clear model cache in memory
+    clear_model_cache()
+
+    # 4. Display Comparison Table
+    print("\n[4/4] Model Comparison Table\n")
+    header = f"{'Model':<24} {'Accuracy':>10} {'Precision':>11} {'Recall':>9} {'F1-Score':>10}"
     print(header)
     print("-" * len(header))
-    for lang in metrics["classes"]:
-        r = metrics["report"].get(lang, {})
+    for m_id, m_info in summary["models"].items():
+        is_best = " (BEST)" if m_id == summary["best_model"] else ""
         print(
-            f"{lang:<12} "
-            f"{r.get('precision', 0):>10.2f} "
-            f"{r.get('recall', 0):>8.2f} "
-            f"{r.get('f1-score', 0):>8.2f} "
-            f"{int(r.get('support', 0)):>9}"
+            f"{m_info['short_name'] + is_best:<24} "
+            f"{m_info['accuracy']:>9.1f}% "
+            f"{m_info['precision']:>10.1f}% "
+            f"{m_info['recall']:>8.1f}% "
+            f"{m_info['f1_score']:>9.1f}%"
         )
+    print("-" * len(header))
 
-    print(f"\n  Overall Accuracy: {metrics['accuracy']}%")
-    print("\n[DONE] Training completed successfully!\n")
+    print(f"\n  ★ Best Performing Model : {summary['best_model_name']}")
+    print(f"  ★ Test Set Accuracy     : {summary['best_accuracy']}%")
+
+    print("\n[DONE] All 6 models trained, evaluated, and saved successfully!")
     print("       Run the web app with:  python app.py\n")
 
 

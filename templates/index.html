@@ -11,8 +11,14 @@
 <!-- ═══════════════════════════ HEADER ═══════════════════════════ -->
 <header class="header">
   <div class="header-title">🎙️ Voice Language Identification System</div>
-  <div class="header-subtitle">Speech &amp; Language Processing Mini Project</div>
-  <span class="header-badge">MFCC · Random Forest · 4 Languages</span>
+  <div class="header-subtitle">Intelligent Speech &amp; Language Recognition Platform</div>
+  <div class="header-badges">
+    <span class="badge badge-gemini">✨ Google Gemini Multimodal AI</span>
+    <span class="badge badge-ml">🌲 6 ML Classifiers (MFCC)</span>
+    <span class="badge badge-status" id="headerKeyBadge">
+      {% if has_gemini_key %}🔑 Gemini API: Active ({{ masked_key }}){% else %}⚠️ Gemini API: Key Required{% endif %}
+    </span>
+  </div>
 </header>
 
 <!-- ═══════════════════════════ MAIN ═════════════════════════════ -->
@@ -21,45 +27,128 @@
   <!-- ── Tab bar ───────────────────────────────────────────────── -->
   <div class="tabs">
     <button class="tab-btn active" onclick="showTab('identify', this)">🎯 Identify Language</button>
-    <button class="tab-btn"        onclick="showTab('train',    this)">⚙️ Train Model</button>
-    <button class="tab-btn"        onclick="showTab('evaluate', this)">📊 Evaluation</button>
+    <button class="tab-btn"        onclick="showTab('apikeys',  this)">🔑 Gemini API Settings</button>
+    <button class="tab-btn"        onclick="showTab('train',    this)">⚙️ Train Models</button>
+    <button class="tab-btn"        onclick="showTab('evaluate', this)">📊 Model Evaluation</button>
   </div>
 
   <!-- ══════════════════ TAB 1 — IDENTIFY ══════════════════════ -->
   <div id="tab-identify" class="tab-content active">
 
+    <!-- Engine Selector Card -->
     <div class="card">
-      <div class="card-title"><span class="icon">📁</span> Upload Audio</div>
-
-      <!-- Upload zone -->
-      <div class="upload-zone" id="uploadZone"
-           ondragover="onDrag(event)" ondragleave="offDrag(event)" ondrop="onDrop(event)">
-        <input type="file" id="audioFile" accept=".wav" onchange="onFileSelect(this)" />
-        <div class="upload-icon">🎵</div>
-        <div class="upload-text">Upload or Drop Voice Recording</div>
-        <div class="upload-hint">Supported format: WAV · Max size 50 MB</div>
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>⚡</span> Select Recognition Engine
+        </div>
       </div>
 
-      <!-- Selected file info -->
-      <div class="selected-file" id="selectedFile">📎 <span id="fileName"></span></div>
+      <div class="engine-selector">
+        <!-- Gemini Engine -->
+        <div class="engine-option selected" id="engine-gemini" onclick="selectEngine('gemini')">
+          <div class="engine-header">
+            <div class="engine-title">✨ Google Gemini AI</div>
+            <span class="engine-tag recommended">Actual Spoken Voice</span>
+          </div>
+          <div class="engine-desc">
+            Uses Gemini Multimodal Audio to identify real speech, accurately transcribe native script, translate to English, and detect linguistic nuances. Solves dataset duplication issues.
+          </div>
+        </div>
 
-      <!-- Model not trained warning -->
-      {% if not model_trained %}
-      <div class="alert alert-warning" style="display:block; margin-top:1rem;">
-        ⚠️ Model has not been trained yet. Go to the <strong>Train Model</strong> tab first.
+        <!-- Local ML Engine -->
+        <div class="engine-option" id="engine-local" onclick="selectEngine('local')">
+          <div class="engine-header">
+            <div class="engine-title">🌲 Local ML Classifiers</div>
+            <span class="engine-tag baseline">6 Offline Models</span>
+          </div>
+          <div class="engine-desc">
+            Offline suite of 6 classifiers trained on local MFCC features in <code>dataset/</code>: Random Forest, SVM, KNN, Logistic Regression, Decision Tree, and Gradient Boosting.
+          </div>
+        </div>
       </div>
-      {% endif %}
+
+      <!-- Quick Gemini Key Notice if not configured -->
+      <div id="geminiKeyNotice" class="alert alert-warning" style="display: {% if not has_gemini_key %}block{% else %}none{% endif %}; margin-bottom: 1.2rem;">
+        ⚠️ <strong>Gemini API Key Needed:</strong> To use Gemini AI, please enter your API key in the <strong>Gemini API Settings</strong> tab or enter it below for this session.
+        <div class="key-input-row" style="margin-top: 0.6rem;">
+          <input type="password" id="inlineApiKey" class="key-input" placeholder="Paste your Gemini API key (AIza...)" />
+          <button class="btn btn-secondary btn-sm" onclick="saveInlineKey()">Save Key</button>
+        </div>
+      </div>
+
+      <!-- Input Mode Switcher: Upload vs Record -->
+      <div class="input-mode-tabs">
+        <button class="input-mode-btn active" id="btnModeUpload" onclick="setInputMode('upload')">
+          📁 Upload Audio File
+        </button>
+        <button class="input-mode-btn" id="btnModeRecord" onclick="setInputMode('record')">
+          🎙️ Record Voice Live
+        </button>
+      </div>
+
+      <!-- Mode 1: Upload Zone -->
+      <div id="uploadContainer">
+        <div class="upload-zone" id="uploadZone"
+             ondragover="onDrag(event)" ondragleave="offDrag(event)" ondrop="onDrop(event)">
+          <input type="file" id="audioFile" accept=".wav,.mp3,.ogg,.flac,.m4a,.aac,.webm" onchange="onFileSelect(this)" />
+          <div class="upload-icon">🎵</div>
+          <div class="upload-text">Upload or Drag Voice Audio</div>
+          <div class="upload-hint">Supported: WAV, MP3, OGG, M4A, FLAC, AAC · Max 50 MB</div>
+        </div>
+      </div>
+
+      <!-- Mode 2: Live Recording Panel -->
+      <div id="recordContainer" class="record-panel">
+        <div class="record-btn-circle" id="recCircleBtn" onclick="toggleRecording()">
+          🎤
+        </div>
+        <div id="recStatusText" style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.4rem;">
+          Click the microphone to start recording
+        </div>
+        <div id="recTimer" style="color: var(--text-muted); font-size: 0.9rem; font-family: monospace;">00:00</div>
+        <div id="audioPreviewContainer" style="margin-top: 1rem; display: none;">
+          <audio id="audioPlayback" controls class="audio-preview"></audio>
+        </div>
+      </div>
+
+      <!-- Selected file / recording info -->
+      <div class="selected-file" id="selectedFile">
+        <span>📎</span> <span id="fileName" style="font-weight:600;"></span>
+      </div>
+
+      <!-- Classification Model Selection Layer -->
+      <div class="model-selection-panel" id="modelSelectionPanel">
+        <div class="model-selection-label">
+          <span>⚙️ Classification Model</span>
+          {% if training_report and training_report.best_model_name %}
+          <span class="best-model-pill">★ Best: {{ training_report.best_model_name }} ({{ training_report.best_accuracy }}%)</span>
+          {% endif %}
+        </div>
+        <select id="selectedModel" class="model-select" onchange="onModelChange()">
+          {% for mid, mname in model_choices %}
+          <option value="{{ mid }}" {% if mid == 'random_forest' %}selected{% endif %}>
+            {{ mname }}
+          </option>
+          {% endfor %}
+        </select>
+        <div class="model-desc-hint" id="modelDescHint">
+          Ensemble of 100 decision trees (robust baseline classifier).
+        </div>
+      </div>
+
+      <!-- Local model warning if local engine selected & untrained -->
+      <div class="alert alert-warning" id="localModelUntrainedWarn" style="display:none; margin-top:1rem;">
+        ⚠️ Local models have not been trained yet. Go to the <strong>Train Models</strong> tab or switch to <strong>Google Gemini AI</strong>.
+      </div>
 
       <!-- Action button -->
-      <button class="btn btn-primary" id="identifyBtn"
-              onclick="identifyLanguage()"
-              {% if not model_trained %}disabled{% endif %}>
-        🔍 Identify Language
+      <button class="btn btn-primary" id="identifyBtn" onclick="identifyLanguage()">
+        🔍 Identify Language &amp; Classify
       </button>
 
       <!-- Spinner -->
       <div class="spinner" id="identifySpinner">
-        <div class="spinner-ring"></div> Analysing audio…
+        <div class="spinner-ring"></div> <span id="spinnerText">Analysing voice features and language patterns…</span>
       </div>
 
       <!-- Error / info alerts -->
@@ -67,18 +156,50 @@
       <div class="alert alert-success" id="identifySuccess"></div>
     </div>
 
-    <!-- Result card (shown after prediction) -->
+    <!-- Result Card -->
     <div class="result-card" id="resultCard">
-      <div class="result-label">Predicted Language</div>
-      <div class="result-language" id="resultLanguage">—</div>
+      <div class="result-header">
+        <div class="result-badge" id="resultEngineBadge">Google Gemini AI</div>
+        <div class="result-language" id="resultLanguage">—</div>
+        <div>
+          <span class="result-confidence-pill">
+            <span>🎯 Confidence:</span>
+            <span id="resultConfidence">—</span>
+          </span>
+        </div>
+      </div>
 
-      <div class="result-label">Confidence</div>
-      <div class="result-confidence" id="resultConfidence">—</div>
+      <!-- Transcription & Translation Grid (Gemini) -->
+      <div class="result-content-grid" id="geminiContentGrid">
+        <div class="content-box">
+          <div class="content-box-title">
+            <span>📝</span> Native Speech Transcription
+          </div>
+          <div class="content-box-text" id="resultTranscript">—</div>
+        </div>
 
+        <div class="content-box">
+          <div class="content-box-title">
+            <span>🌐</span> English Translation
+          </div>
+          <div class="content-box-text" id="resultTranslation">—</div>
+        </div>
+      </div>
+
+      <!-- Phonetic / Linguistic Reasoning Box -->
+      <div class="reasoning-box" id="geminiReasoningBox">
+        <div class="reasoning-box-title">💡 Phonetic &amp; Linguistic Analysis</div>
+        <div class="reasoning-box-text" id="resultReasoning">—</div>
+        <div id="resultDialectWrap" style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+          <strong>Accent / Dialect:</strong> <span id="resultDialect">—</span>
+        </div>
+      </div>
+
+      <!-- Meta info -->
       <div class="result-meta">
         <div class="meta-item">
           <div class="meta-value" id="metaDuration">—</div>
-          <div class="meta-label">Audio Duration</div>
+          <div class="meta-label">Duration</div>
         </div>
         <div class="meta-item">
           <div class="meta-value" id="metaSR">—</div>
@@ -86,28 +207,80 @@
         </div>
         <div class="meta-item">
           <div class="meta-value" id="metaFile">—</div>
-          <div class="meta-label">Filename</div>
+          <div class="meta-label">Audio File</div>
+        </div>
+        <div class="meta-item" id="metaModelItem">
+          <div class="meta-value" id="metaModel">—</div>
+          <div class="meta-label">Model Engine</div>
         </div>
       </div>
 
-      <!-- Probability bars for all languages -->
-      <div class="prob-bars" id="probBars"></div>
+      <!-- Probability bars for candidate languages -->
+      <div class="prob-bars">
+        <div style="font-size:0.85rem; font-weight:700; color:var(--text-muted); margin-bottom:1rem; text-transform:uppercase; letter-spacing:0.8px;">
+          📊 Language Probability Distribution
+        </div>
+        <div id="probBarsList"></div>
+      </div>
     </div>
 
   </div><!-- /tab-identify -->
 
-  <!-- ══════════════════ TAB 2 — TRAIN ═════════════════════════ -->
+  <!-- ══════════════════ TAB 2 — GEMINI API SETTINGS ════════════ -->
+  <div id="tab-apikeys" class="tab-content">
+    <div class="card">
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>🔑</span> Google Gemini API Configuration
+        </div>
+      </div>
+
+      <div class="instructions">
+        <strong>Why use Gemini API?</strong><br>
+        If your local dataset consists of synthetic or limited audio clips, local ML classifiers may struggle with diverse real-world human speech.
+        Google Gemini Multimodal Audio directly listens to real spoken voices in <strong>English, Hindi, Tamil, Telugu</strong> and dozens of world languages, generating accurate transcriptions, translations, and confidence scores.
+      </div>
+
+      <div class="key-box">
+        <label style="font-size: 0.9rem; font-weight: 700; color: var(--text);">Gemini API Key</label>
+        <p style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.2rem;">
+          Get your free API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent-light);">Google AI Studio</a>.
+        </p>
+
+        <div class="key-input-row">
+          <input type="password" id="geminiApiKeyInput" class="key-input" placeholder="Paste AIzaSy..." />
+          <button class="btn btn-primary btn-sm" onclick="saveApiKeyFromTab()" style="width:auto; margin-top:0; padding:0.75rem 1.4rem;">
+            💾 Save API Key
+          </button>
+        </div>
+
+        <div style="margin-top: 1rem; font-size: 0.88rem; color: var(--text-muted);">
+          Current Status: <span id="keyStatusDisplay" style="font-weight: 700; color: {% if has_gemini_key %}#6ee7b7{% else %}#fca5a5{% endif %};">
+            {% if has_gemini_key %}✅ Active ({{ masked_key }}){% else %}❌ Not Configured{% endif %}
+          </span>
+        </div>
+      </div>
+
+      <div class="alert alert-success" id="keySaveSuccess"></div>
+      <div class="alert alert-error"   id="keySaveError"></div>
+    </div>
+  </div><!-- /tab-apikeys -->
+
+  <!-- ══════════════════ TAB 3 — TRAIN ═════════════════════════ -->
   <div id="tab-train" class="tab-content">
 
     <div class="card">
-      <div class="card-title"><span class="icon">📂</span> Dataset Overview</div>
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>📂</span> Local Dataset Overview
+        </div>
+      </div>
 
       <div class="instructions">
         Place <code>.wav</code> recordings in the corresponding language folders:<br>
         <code>dataset/english/</code> &nbsp; <code>dataset/hindi/</code> &nbsp;
         <code>dataset/tamil/</code> &nbsp; <code>dataset/telugu/</code><br>
-        Then click <strong>Train Model</strong> below. Aim for at least
-        <strong>10–20 files per language</strong> for reliable accuracy.
+        Click <strong>Train All 6 Classification Models</strong> below. All models are trained on the exact same 80-dimensional MFCC feature vectors with an identical stratified split (random_state=42) for fair comparison.
       </div>
 
       <!-- Language file counts -->
@@ -122,11 +295,11 @@
       </div>
 
       <button class="btn btn-primary" id="trainBtn" onclick="startTraining()">
-        ⚙️ Train Model
+        ⚙️ Train All 6 Classification Models
       </button>
 
       <div class="spinner" id="trainSpinner">
-        <div class="spinner-ring"></div> Training in progress… this may take a moment.
+        <div class="spinner-ring"></div> Training Random Forest, SVM, KNN, Logistic Regression, Decision Tree &amp; Gradient Boosting…
       </div>
 
       <div class="alert alert-success" id="trainSuccess"></div>
@@ -136,27 +309,109 @@
 
   </div><!-- /tab-train -->
 
-  <!-- ══════════════════ TAB 3 — EVALUATE ══════════════════════ -->
+  <!-- ══════════════════ TAB 4 — EVALUATE ══════════════════════ -->
   <div id="tab-evaluate" class="tab-content">
 
     {% if training_report %}
-    <!-- Accuracy banner -->
-    <div class="accuracy-display">
+
+    <!-- Best Model Highlight Banner -->
+    <div class="best-model-banner">
       <div>
-        <div class="accuracy-value">{{ training_report.accuracy }}%</div>
-        <div class="accuracy-label">Overall Accuracy</div>
+        <div style="font-size:0.75rem; text-transform:uppercase; letter-spacing:1px; color:var(--text-muted); font-weight:700;">
+          🏆 Best Performing Model
+        </div>
+        <div style="font-size:1.8rem; font-weight:800; color:#fff; margin-top:0.2rem;">
+          {{ training_report.best_model_name or 'Random Forest' }}
+        </div>
+        <div style="color:var(--text-muted); font-size:0.85rem; margin-top:0.2rem;">
+          Evaluated across all 6 classifiers on identical 80-dim MFCC features ({{ training_report.n_test }} test samples)
+        </div>
       </div>
-      <div style="color: var(--text-muted); font-size:0.85rem; max-width:220px; text-align:left;">
-        Trained on <strong>{{ training_report.n_train }}</strong> samples,
-        tested on <strong>{{ training_report.n_test }}</strong> samples.
+      <div style="text-align:right;">
+        <div style="font-size:2.8rem; font-weight:900; color:var(--success);">
+          {{ training_report.best_accuracy or training_report.accuracy }}%
+        </div>
+        <div style="font-size:0.82rem; color:var(--text-muted);">Highest Test Accuracy</div>
       </div>
     </div>
 
-    <!-- Classification report table -->
+    <!-- Model Comparison Table -->
     <div class="card">
-      <div class="card-title"><span class="icon">📋</span> Classification Report</div>
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>📊</span> Model Comparison Table
+        </div>
+        <span style="font-size:0.82rem; color:var(--text-muted); font-weight:normal;">
+          Identical Train/Test Split (random_state=42)
+        </span>
+      </div>
+
       <div style="overflow-x:auto;">
         <table class="report-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Model</th>
+              <th>Accuracy</th>
+              <th>Precision</th>
+              <th>Recall</th>
+              <th>F1-Score</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% if training_report.models %}
+              {% for mid, minfo in training_report.models.items() %}
+              <tr style="{% if mid == training_report.best_model %}background: rgba(16, 185, 129, 0.08); font-weight:600;{% endif %}">
+                <td style="text-align:left;">
+                  {{ minfo.name }}
+                  {% if mid == training_report.best_model %}
+                  <span class="best-badge-star">★ BEST</span>
+                  {% endif %}
+                </td>
+                <td>{{ "%.1f"|format(minfo.accuracy) }}%</td>
+                <td>{{ "%.1f"|format(minfo.precision) }}%</td>
+                <td>{{ "%.1f"|format(minfo.recall) }}%</td>
+                <td>{{ "%.1f"|format(minfo.f1_score) }}%</td>
+                <td><span style="color:#6ee7b7; font-size:0.82rem;">● Trained</span></td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr>
+                <td style="text-align:left;">Random Forest</td>
+                <td>{{ "%.1f"|format(training_report.accuracy) }}%</td>
+                <td>{{ "%.1f"|format(training_report.accuracy) }}%</td>
+                <td>{{ "%.1f"|format(training_report.accuracy) }}%</td>
+                <td>{{ "%.1f"|format(training_report.accuracy) }}%</td>
+                <td><span style="color:#6ee7b7;">● Trained</span></td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Detailed Classification Report for Selected Model -->
+    <div class="card">
+      <div class="card-title" style="flex-wrap:wrap; gap:0.6rem;">
+        <div class="card-title-left">
+          <span>📋</span> Per-Model Classification Report
+        </div>
+        {% if training_report.models %}
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          <label for="evalModelSelect" style="font-size:0.82rem; color:var(--text-muted);">View Model:</label>
+          <select id="evalModelSelect" class="key-input" style="padding:0.4rem 0.8rem; font-size:0.84rem; width:auto;" onchange="switchEvalModel(this.value)">
+            {% for mid, minfo in training_report.models.items() %}
+            <option value="{{ mid }}" {% if mid == training_report.best_model %}selected{% endif %}>
+              {{ minfo.name }}{% if mid == training_report.best_model %} (Best){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table class="report-table" id="evalReportTable">
           <thead>
             <tr>
               <th>Language</th>
@@ -166,7 +421,7 @@
               <th>Support</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="evalReportTbody">
             {% for lang in training_report.classes %}
             {% set r = training_report.report.get(lang, {}) %}
             <tr>
@@ -190,14 +445,21 @@
       </div>
     </div>
 
-    <!-- Confusion matrix -->
+    <!-- Confusion Matrix for Selected Model -->
     <div class="card">
-      <div class="card-title"><span class="icon">🔲</span> Confusion Matrix</div>
-      <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:1rem;">
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>🔲</span> Confusion Matrix
+        </div>
+        <span id="cmModelTitle" style="font-size:0.82rem; color:var(--text-muted); font-weight:normal;">
+          Model: {{ training_report.best_model_name or 'Random Forest' }}
+        </span>
+      </div>
+      <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:1rem;">
         Rows = Actual language &nbsp;|&nbsp; Columns = Predicted language
       </p>
       <div style="overflow-x:auto;">
-        <table class="cm-table">
+        <table class="cm-table" id="cmTable">
           <thead>
             <tr>
               <th>Actual ↓ / Pred →</th>
@@ -206,7 +468,7 @@
               {% endfor %}
             </tr>
           </thead>
-          <tbody>
+          <tbody id="cmTbody">
             {% for i, row in enumerate(training_report.confusion_matrix) %}
             <tr>
               <th>{{ training_report.classes[i].capitalize() }}</th>
@@ -222,10 +484,14 @@
 
     {% else %}
     <div class="card">
-      <div class="card-title"><span class="icon">📊</span> Evaluation</div>
+      <div class="card-title">
+        <div class="card-title-left">
+          <span>📊</span> Evaluation
+        </div>
+      </div>
       <div class="alert alert-info" style="display:block;">
-        ℹ️ No training report found. Please train the model first on the
-        <strong>Train Model</strong> tab.
+        ℹ️ No local training report found. Please train the models first on the
+        <strong>Train Models</strong> tab.
       </div>
     </div>
     {% endif %}
@@ -237,17 +503,149 @@
 <!-- ═══════════════════════════ FOOTER ═══════════════════════════ -->
 <footer class="footer">
   Voice Language Identification System &mdash; Speech &amp; Language Processing Mini Project
-  &nbsp;|&nbsp; MFCC + Random Forest &nbsp;|&nbsp; English · Hindi · Tamil · Telugu
+  &nbsp;|&nbsp; 6 Classical ML Classifiers &amp; Google Gemini AI &nbsp;|&nbsp; English · Hindi · Tamil · Telugu
 </footer>
 
 <!-- ═══════════════════════════ JS ════════════════════════════════ -->
 <script>
+let currentEngine = 'gemini';
+let hasGeminiKey = {{ 'true' if has_gemini_key else 'false' }};
+let isLocalModelTrained = {{ 'true' if model_trained else 'false' }};
+let selectedAudioBlob = null;
+let selectedAudioFilename = "";
+
+// Multi-model metadata for descriptions & evaluation switching
+const MODEL_DESCRIPTIONS = {
+  'auto': 'Dynamically uses the classifier that achieved the highest test accuracy during evaluation.',
+  'random_forest': 'Ensemble of 100 decision trees with bootstrap aggregation (robust baseline).',
+  'svm': 'Support Vector Machine with RBF kernel and Platt probability calibration.',
+  'knn': 'K-Nearest Neighbors classifier (k=5) based on Euclidean distance in MFCC space.',
+  'logistic_regression': 'Multinomial Logistic Regression with L2 regularization and softmax probabilities.',
+  'decision_tree': 'Single interpretable decision tree using Gini impurity splits.',
+  'gradient_boosting': 'Sequential ensemble that fits boosting trees to pseudo-residuals.'
+};
+
+const TRAINING_MODELS = {{ training_report.models|tojson if training_report and training_report.models else '{}' }};
+const TRAINING_CLASSES = {{ training_report.classes|tojson if training_report and training_report.classes else '[]' }};
+
+function onModelChange() {
+  const sel = document.getElementById('selectedModel');
+  const val = sel.value;
+  const desc = document.getElementById('modelDescHint');
+  if (desc && MODEL_DESCRIPTIONS[val]) {
+    desc.textContent = MODEL_DESCRIPTIONS[val];
+  }
+}
+
+function switchEvalModel(modelId) {
+  if (!TRAINING_MODELS || !TRAINING_MODELS[modelId]) return;
+  const m = TRAINING_MODELS[modelId];
+
+  // Update CM Title
+  const cmTitle = document.getElementById('cmModelTitle');
+  if (cmTitle) cmTitle.textContent = 'Model: ' + m.name;
+
+  // Update classification report table
+  const tbody = document.getElementById('evalReportTbody');
+  if (tbody && m.report) {
+    let rowsHtml = '';
+    TRAINING_CLASSES.forEach(lang => {
+      const r = m.report[lang] || {};
+      const prec = (r.precision !== undefined) ? Number(r.precision).toFixed(2) : '0.00';
+      const rec = (r.recall !== undefined) ? Number(r.recall).toFixed(2) : '0.00';
+      const f1 = (r['f1-score'] !== undefined) ? Number(r['f1-score']).toFixed(2) : '0.00';
+      const supp = (r.support !== undefined) ? Math.round(r.support) : 0;
+      rowsHtml += `
+        <tr>
+          <td>${lang.charAt(0).toUpperCase() + lang.slice(1)}</td>
+          <td>${prec}</td>
+          <td>${rec}</td>
+          <td>${f1}</td>
+          <td>${supp}</td>
+        </tr>`;
+    });
+
+    const wa = m.report['weighted avg'] || {};
+    const waPrec = (wa.precision !== undefined) ? Number(wa.precision).toFixed(2) : '0.00';
+    const waRec = (wa.recall !== undefined) ? Number(wa.recall).toFixed(2) : '0.00';
+    const waF1 = (wa['f1-score'] !== undefined) ? Number(wa['f1-score']).toFixed(2) : '0.00';
+    const waSupp = (wa.support !== undefined) ? Math.round(wa.support) : 0;
+
+    rowsHtml += `
+      <tr style="font-weight:700; border-top: 2px solid var(--border);">
+        <td>Weighted Avg</td>
+        <td>${waPrec}</td>
+        <td>${waRec}</td>
+        <td>${waF1}</td>
+        <td>${waSupp}</td>
+      </tr>`;
+    tbody.innerHTML = rowsHtml;
+  }
+
+  // Update Confusion Matrix
+  const cmTbody = document.getElementById('cmTbody');
+  if (cmTbody && m.confusion_matrix) {
+    let cmHtml = '';
+    m.confusion_matrix.forEach((row, i) => {
+      const lang = TRAINING_CLASSES[i] || `Class ${i}`;
+      cmHtml += `<tr><th>${lang.charAt(0).toUpperCase() + lang.slice(1)}</th>`;
+      row.forEach((val, j) => {
+        const diagClass = (i === j) ? 'cm-diag' : '';
+        cmHtml += `<td class="${diagClass}">${val}</td>`;
+      });
+      cmHtml += `</tr>`;
+    });
+    cmTbody.innerHTML = cmHtml;
+  }
+}
+
 /* ── Tab switching ─────────────────────────────────────────────── */
 function showTab(name, btn) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   btn.classList.add('active');
+}
+
+/* ── Engine Selection ─────────────────────────────────────────── */
+function selectEngine(engine) {
+  currentEngine = engine;
+  document.querySelectorAll('.engine-option').forEach(el => el.classList.remove('selected'));
+  document.getElementById('engine-' + engine).classList.add('selected');
+
+  const warn = document.getElementById('localModelUntrainedWarn');
+  if (engine === 'local' && !isLocalModelTrained) {
+    warn.style.display = 'block';
+  } else {
+    warn.style.display = 'none';
+  }
+
+  const notice = document.getElementById('geminiKeyNotice');
+  if (engine === 'gemini' && !hasGeminiKey) {
+    notice.style.display = 'block';
+  } else {
+    notice.style.display = 'none';
+  }
+}
+
+/* ── Input Mode (Upload vs Record) ────────────────────────────── */
+function setInputMode(mode) {
+  const btnUpload = document.getElementById('btnModeUpload');
+  const btnRecord = document.getElementById('btnModeRecord');
+  const uploadContainer = document.getElementById('uploadContainer');
+  const recordContainer = document.getElementById('recordContainer');
+
+  if (mode === 'upload') {
+    btnUpload.classList.add('active');
+    btnRecord.classList.remove('active');
+    uploadContainer.style.display = 'block';
+    recordContainer.style.display = 'none';
+  } else {
+    btnRecord.classList.add('active');
+    btnUpload.classList.remove('active');
+    uploadContainer.style.display = 'none';
+    recordContainer.style.display = 'block';
+  }
 }
 
 /* ── File upload helpers ───────────────────────────────────────── */
@@ -269,12 +667,74 @@ function onFileSelect(input) {
 }
 
 function showSelectedFile(file) {
+  selectedAudioBlob = file;
+  selectedAudioFilename = file.name;
   const el = document.getElementById('selectedFile');
   document.getElementById('fileName').textContent = file.name + '  (' + (file.size / 1024).toFixed(1) + ' KB)';
-  el.style.display = 'block';
+  el.style.display = 'flex';
   hideAlert('identifyError');
   hideAlert('identifySuccess');
   document.getElementById('resultCard').style.display = 'none';
+}
+
+/* ── Microphone Recording ──────────────────────────────────────── */
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordStartTime = 0;
+let recordTimerInterval = null;
+
+async function toggleRecording() {
+  const btn = document.getElementById('recCircleBtn');
+  const status = document.getElementById('recStatusText');
+  const timer = document.getElementById('recTimer');
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    btn.classList.remove('recording');
+    btn.innerHTML = '🎤';
+    status.textContent = 'Recording finished! Ready to identify.';
+    clearInterval(recordTimerInterval);
+  } else {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(stream);
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const blob = new Blob(recordedChunks, { type: mimeType });
+        selectedAudioBlob = blob;
+        selectedAudioFilename = 'voice_recording.' + (mimeType.includes('wav') ? 'wav' : 'webm');
+
+        const audioUrl = URL.createObjectURL(blob);
+        const player = document.getElementById('audioPlayback');
+        player.src = audioUrl;
+        document.getElementById('audioPreviewContainer').style.display = 'block';
+
+        showSelectedFile({ name: 'Live Recording (' + selectedAudioFilename + ')', size: blob.size });
+      };
+
+      mediaRecorder.start();
+      btn.classList.add('recording');
+      btn.innerHTML = '⏹️';
+      status.textContent = 'Recording in progress... Speak naturally.';
+
+      recordStartTime = Date.now();
+      recordTimerInterval = setInterval(() => {
+        const sec = Math.floor((Date.now() - recordStartTime) / 1000);
+        const m = String(Math.floor(sec / 60)).padStart(2, '0');
+        const s = String(sec % 60).padStart(2, '0');
+        timer.textContent = `${m}:${s}`;
+      }, 500);
+
+    } catch (err) {
+      showAlert('identifyError', '❌ Microphone access error: ' + err.message);
+    }
+  }
 }
 
 /* ── Alert helpers ─────────────────────────────────────────────── */
@@ -284,16 +744,58 @@ function showAlert(id, msg) {
   el.style.display = 'block';
 }
 function hideAlert(id) {
-  document.getElementById(id).style.display = 'none';
+  const el = document.getElementById(id);
+  if (el) el.style.display = 'none';
 }
 
-/* ── Identify language ─────────────────────────────────────────── */
-async function identifyLanguage() {
-  const fileInput = document.getElementById('audioFile');
-  if (!fileInput.files.length) {
-    showAlert('identifyError', '⚠️ Please select a WAV audio file first.');
+/* ── API Key Management ────────────────────────────────────────── */
+async function saveApiKey(keyVal, successAlertId, errorAlertId) {
+  if (!keyVal || !keyVal.trim()) {
+    showAlert(errorAlertId, '⚠️ Please provide a valid Gemini API key.');
     return;
   }
+
+  try {
+    const resp = await fetch('/save_api_key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: keyVal.trim() })
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      hasGeminiKey = true;
+      document.getElementById('headerKeyBadge').textContent = `🔑 Gemini API: Active (${data.masked_key})`;
+      document.getElementById('keyStatusDisplay').textContent = `✅ Active (${data.masked_key})`;
+      document.getElementById('keyStatusDisplay').style.color = '#6ee7b7';
+      hideAlert('geminiKeyNotice');
+      showAlert(successAlertId, '✅ ' + data.message);
+      hideAlert(errorAlertId);
+    } else {
+      showAlert(errorAlertId, '❌ ' + (data.error || 'Failed to save key.'));
+    }
+  } catch (err) {
+    showAlert(errorAlertId, '❌ Network error: ' + err.message);
+  }
+}
+
+function saveApiKeyFromTab() {
+  const key = document.getElementById('geminiApiKeyInput').value;
+  saveApiKey(key, 'keySaveSuccess', 'keySaveError');
+}
+
+function saveInlineKey() {
+  const key = document.getElementById('inlineApiKey').value;
+  saveApiKey(key, 'identifySuccess', 'identifyError');
+}
+
+/* ── Identify Language ─────────────────────────────────────────── */
+async function identifyLanguage() {
+  if (!selectedAudioBlob) {
+    showAlert('identifyError', '⚠️ Please upload an audio file or record your voice first.');
+    return;
+  }
+
+  const selectedModelVal = document.getElementById('selectedModel').value;
 
   // Prepare UI
   hideAlert('identifyError');
@@ -301,9 +803,17 @@ async function identifyLanguage() {
   document.getElementById('resultCard').style.display = 'none';
   document.getElementById('identifyBtn').disabled = true;
   document.getElementById('identifySpinner').style.display = 'flex';
+  document.getElementById('spinnerText').textContent = (currentEngine === 'gemini')
+    ? 'Querying Google Gemini AI for speech recognition & linguistic analysis…'
+    : `Extracting 80-dim MFCC features & classifying with ${selectedModelVal.toUpperCase()}…`;
 
   const formData = new FormData();
-  formData.append('audio', fileInput.files[0]);
+  formData.append('audio', selectedAudioBlob, selectedAudioFilename || 'audio.wav');
+  formData.append('engine', currentEngine);
+  formData.append('model', selectedModelVal);
+
+  const inlineKey = document.getElementById('inlineApiKey') ? document.getElementById('inlineApiKey').value.trim() : '';
+  if (inlineKey) formData.append('api_key', inlineKey);
 
   try {
     const resp = await fetch('/predict', { method: 'POST', body: formData });
@@ -318,16 +828,37 @@ async function identifyLanguage() {
 
     // Populate result card
     document.getElementById('resultLanguage').textContent   = r.language.toUpperCase();
-    document.getElementById('resultConfidence').textContent = r.confidence + '%';
+    document.getElementById('resultConfidence').textContent = (r.confidence !== null && r.confidence !== 'N/A') ? r.confidence + '%' : 'N/A';
     document.getElementById('metaDuration').textContent     = r.duration + ' sec';
     document.getElementById('metaSR').textContent           = r.sample_rate + ' Hz';
     document.getElementById('metaFile').textContent         = r.filename;
 
-    // Probability bars
-    const probContainer = document.getElementById('probBars');
-    probContainer.innerHTML = '<div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:0.8rem;">All Language Probabilities</div>';
+    const isGemini = (r.engine === 'gemini');
+    document.getElementById('resultEngineBadge').textContent = isGemini ? 'Google Gemini AI ✨' : `Local ML · ${r.model_used || 'Classifier'}`;
+    document.getElementById('metaModel').textContent = r.model_used || (isGemini ? 'Gemini Multimodal Audio' : 'Random Forest');
 
-    const sorted = Object.entries(r.all_probs).sort((a, b) => b[1] - a[1]);
+    // Gemini rich panels
+    const geminiGrid = document.getElementById('geminiContentGrid');
+    const geminiReasoning = document.getElementById('geminiReasoningBox');
+
+    if (isGemini && (r.transcript || r.english_translation)) {
+      geminiGrid.style.display = 'grid';
+      document.getElementById('resultTranscript').textContent = r.transcript || 'Speech recognized without transcript.';
+      document.getElementById('resultTranslation').textContent = r.english_translation || 'N/A';
+
+      geminiReasoning.style.display = 'block';
+      document.getElementById('resultReasoning').textContent = r.reasoning || 'Identified via multilingual phonological model.';
+      document.getElementById('resultDialect').textContent = r.dialect_or_accent || 'Standard';
+    } else {
+      geminiGrid.style.display = 'none';
+      geminiReasoning.style.display = 'none';
+    }
+
+    // Probability bars
+    const probContainer = document.getElementById('probBarsList');
+    probContainer.innerHTML = '';
+
+    const sorted = Object.entries(r.all_probs || {}).sort((a, b) => b[1] - a[1]);
     sorted.forEach(([lang, pct]) => {
       probContainer.innerHTML += `
         <div class="prob-row">
@@ -368,7 +899,6 @@ async function startTraining() {
       document.getElementById('trainSpinner').style.display = 'none';
       return;
     }
-    // Start polling
     _pollTimer = setInterval(pollTrainingStatus, 1500);
   } catch(err) {
     showAlert('trainError', '❌ Network error: ' + err.message);
@@ -386,23 +916,25 @@ async function pollTrainingStatus() {
       clearInterval(_pollTimer);
       document.getElementById('trainSpinner').style.display = 'none';
       document.getElementById('trainBtn').disabled = false;
+      isLocalModelTrained = true;
 
-      const acc = data.result ? data.result.accuracy : '?';
+      const bestModelName = (data.result && data.result.best_model_name) ? data.result.best_model_name : 'Random Forest';
+      const bestAcc = (data.result && data.result.best_accuracy) ? data.result.best_accuracy : '?';
+
       showAlert('trainSuccess',
-        `✅ Training completed successfully!  Accuracy: ${acc}%\n` +
-        `   Reload the Evaluation tab to view the full report.`
+        `✅ All 6 classification models trained successfully!\n` +
+        `   Best Performing Model: ${bestModelName} (Accuracy: ${bestAcc}%).\n` +
+        `   Reloading page to refresh Evaluation dashboard…`
       );
-      // Reload page to refresh eval tab
-      setTimeout(() => location.reload(), 2000);
+      setTimeout(() => location.reload(), 2500);
     } else if (data.status === 'error') {
       clearInterval(_pollTimer);
       document.getElementById('trainSpinner').style.display = 'none';
       document.getElementById('trainBtn').disabled = false;
       showAlert('trainError', '❌ Training failed: ' + data.message);
     }
-    // If 'running', keep polling
   } catch(err) {
-    // network hiccup, keep polling
+    // Keep polling
   }
 }
 
@@ -418,8 +950,10 @@ async function refreshDatasetCounts() {
   } catch(e) {}
 }
 
-// Refresh once on load
-document.addEventListener('DOMContentLoaded', refreshDatasetCounts);
+document.addEventListener('DOMContentLoaded', () => {
+  refreshDatasetCounts();
+  onModelChange();
+});
 </script>
 
 </body>
